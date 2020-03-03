@@ -1,0 +1,110 @@
+
+---
+- name: "Wordpress Installation"
+  hosts: all
+  become: yes
+  vars_files:
+    - variable.vars
+  tasks:
+
+    - name: "lamp installation"
+      yum: 
+        name:
+          - httpd
+          - php
+          - php-mysql
+      state: present
+    
+    - name: "create virtual host" 
+      template: 
+        src: virtualhost.tmpl
+        dest: "/etc/httpd/conf.d/{{ domain }}.conf"
+        
+    - name: "creating doc root"
+      file:
+        path: "/var/www/html/{{ domain }}"
+        state: directory
+        owner: apache
+        group: apache
+
+    - name: "restarting httpd"
+      service:
+        name: httpd
+        state: restarted
+        enabled: true
+
+    - name: "mariadb"
+      yum:
+        name: 
+          - mariadb-server
+          - MySQL-python
+        state: present
+
+    - name: "mariadb restart"
+      service:
+        name: mariadb
+        state: restarted
+        enabled: true
+ 
+    - name: "Mariadb reset root paswd"
+      ignore_errors: true
+      mysql_user:
+        login_user: "root"
+        login_password: ""
+        name: "root"
+        password: "{{ mysql_root_password }}"
+        host_all: true
+
+    - name: "Mariadb delete anonymous user"
+      mysql_user:
+        login_user: "root"
+        login_password: "{{ mysql_root_password }}"
+        name: ""
+        host_all: true
+        state: absent
+
+    - name: "Create database"
+      mysql_db:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        name: "{{ mysql_db }}"
+        state: present
+
+    - name: "create user with privilege"
+      mysql_user:
+        login_user: root
+        login_password: ""{{ mysql_root_password }}
+        name: "{{ mysql_user }}"
+        password: "{{ mysql_passwd }}"
+        host: localhost
+        priv: "{{ mysql_db }}.*:ALL"
+
+    - name: "wordpress download"
+      get_url: 
+        url: https://wordpress.org/wordpress-4.7.5.tar.gz
+        dest: /tmp/wordpress.tar.gz
+
+    - name: "unzip"
+      unarchive: 
+        src: /tmp/wordpress.tar.gz
+        dest: "/tmp"
+        remote_src: true
+
+    - name: "copy wp"
+      copy:
+        src: /tmp/wordpress/
+        dest: "/var/www/html/{{ domain }}/"
+        remote_src: true
+
+    - name: "copy config file"
+      template:
+        src: wordpress.tmpl
+        dest: "/var/www/html/{{ domain }}/wp-config.php"
+
+    - name: "clean up"
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - /tmp/wordpress.tar.gz
+        - /tmp/wordpress
